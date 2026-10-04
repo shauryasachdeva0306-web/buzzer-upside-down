@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Quiz Buzzer – Host</title>
+<style>
+:root{--bg:#f3f1ec;--ink:#1d2a2f;--mute:#6b777c;--card:#fff;--line:#d9d5cb;--go:#1f8a5b;--stop:#b23a48}
+@media(prefers-color-scheme:dark){:root{--bg:#14191c;--ink:#eceae3;--mute:#93a0a5;--card:#1e262a;--line:#33403f}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:"Trebuchet MS","Segoe UI",system-ui,sans-serif}
+main{max-width:640px;margin:0 auto;padding:18px}h1{font-size:1.3rem}h2{font-size:1rem;margin:18px 0 8px}
+button,input{font:inherit;color:var(--ink)}button{cursor:pointer;border:1px solid var(--line);background:var(--card);border-radius:8px;padding:10px 14px}
+input{padding:12px;border:2px solid var(--line);border-radius:8px;background:var(--card)}
+input:focus-visible,button:focus-visible{outline:3px solid #2e86ab;outline-offset:2px}
+.msg{padding:14px;margin:12px 0;text-align:center;border:2px solid var(--line);border-radius:10px;background:var(--card)}
+.msg.open{border-color:var(--go)}.msg.locked{border-color:var(--stop)}
+.row{display:flex;gap:8px;flex-wrap:wrap}.go{background:var(--go);color:#fff;border-color:var(--go)}.stop{background:var(--stop);color:#fff;border-color:var(--stop)}
+.rank{display:flex;align-items:center;gap:12px;padding:12px;margin-bottom:8px;border:2px solid var(--line);border-radius:10px;background:var(--card)}
+.rank .n{font-weight:800;font-size:1.4rem;min-width:2.4rem}.rank .nm{flex:1;font-weight:700;overflow-wrap:anywhere}
+.rank small{display:block;color:var(--mute);font-weight:400}
+.r1{border-color:#d99a00;background:color-mix(in srgb,#d99a00 16%,var(--card));font-size:1.25rem}.r2{border-color:#8a9aa3}
+table{width:100%;border-collapse:collapse}td{padding:7px 4px;border-bottom:1px solid var(--line)}td:last-child{text-align:right;font-weight:700}
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script></head><body><main>
+<h1>Quiz Buzzer – Host</h1>
+<div id="app"></div>
+</main>
+<script>
+const app=document.getElementById('app');
+let pin=sessionStorage.getItem('bz_pin')||'',st=null,es=null;
+function el(t,c,x){const e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e;}
+async function act(a,extra){try{const r=await fetch('/host/action',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pin,action:a,...extra})});return r.ok;}catch(e){return false;}}
+function login(note){
+  const f=el('div'),i=el('input');i.type='password';i.placeholder='Host PIN';i.setAttribute('aria-label','Host PIN');
+  const b=el('button','go','Enter');
+  const go=async()=>{pin=i.value;if(await act('ping')){sessionStorage.setItem('bz_pin',pin);connect();}else login('Wrong PIN or server not reachable.');};
+  b.onclick=go;i.onkeydown=e=>{if(e.key==='Enter')go();};
+  f.append(el('p',null,note||'Enter the host PIN.'),i,document.createTextNode(' '),b);
+  app.replaceChildren(f);i.focus();
+}
+function connect(){
+  if(es)es.close();
+  es=new EventSource('/host/events?pin='+encodeURIComponent(pin));
+  es.onmessage=e=>{st=JSON.parse(e.data);render();};
+}
+let qrBox=null,qrUrl='';
+function joinCard(url){
+  const c=el('div','msg');c.append(el('div',null,'Teams join by scanning this code or opening:'));
+  const u=el('div',null,url);u.style.cssText='font-weight:800;font-size:1.15rem;margin:8px 0;overflow-wrap:anywhere';c.append(u);
+  if(url!==qrUrl){qrBox=el('div');qrBox.style.cssText='display:inline-block;background:#fff;padding:8px;border-radius:8px';
+    try{if(window.QRCode)new QRCode(qrBox,{text:url,width:180,height:180});}catch(e){}qrUrl=url;}
+  c.append(qrBox);
+  const b=el('button',null,'Copy link');b.style.display='block';b.style.margin='10px auto 0';
+  b.onclick=()=>{if(navigator.clipboard)navigator.clipboard.writeText(url);b.textContent='Copied';};c.append(b);
+  return c;
+}
+const ord=n=>n===1?'1st':n===2?'2nd':n===3?'3rd':n+'th';
+function render(){
+  const w=el('div');
+  w.append(joinCard(st.join));
+  w.append(el('div','msg '+(st.open?'open':'locked'),st.open?'Buzzers are OPEN (round '+st.round+')':'Buzzers are LOCKED'+(st.round?' (round '+st.round+')':'')));
+  const bar=el('div','row');
+  const t=el('button',st.open?'stop':'go',st.open?'Lock buzzers':'Open buzzers');t.onclick=()=>act(st.open?'lock':'open');
+  const n=el('button',null,'New round (clear presses)');n.onclick=()=>act('new');
+  bar.append(t,n);w.append(bar,el('h2',null,'Press order (only you can see this)'));
+  if(!st.presses.length)w.append(el('div','msg','No one has buzzed yet.'));
+  st.presses.forEach((p,i)=>{
+    const r=el('div','rank'+(i===0?' r1':i===1?' r2':''));
+    r.append(el('div','n',ord(i+1)));
+    const nm=el('div','nm',p.name);if(i>0)nm.append(el('small',null,'+'+(p.ms/1000).toFixed(2)+' s after 1st'));
+    const b=el('button',null,'+1');b.setAttribute('aria-label','Add a point to '+p.name);b.onclick=()=>act('point',{name:p.name,delta:1});
+    r.append(nm,b);w.append(r);
+  });
+  w.append(el('h2',null,'Leaderboard'));
+  if(!st.scores.length)w.append(el('div','msg','Scores appear after you give a point.'));
+  else{const tb=el('table');st.scores.slice().sort((a,b)=>b.score-a.score).forEach(s=>{const tr=el('tr');tr.append(el('td',null,s.name),el('td',null,String(s.score)));tb.append(tr);});w.append(tb);}
+  app.replaceChildren(w);
+}
+if(pin){act('ping').then(ok=>ok?connect():login());}else login();
+</script></body></html>

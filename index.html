@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Quiz Buzzer</title>
+<style>
+:root{--bg:#f3f1ec;--ink:#1d2a2f;--card:#fff;--line:#d9d5cb;--go:#1f8a5b;--stop:#b23a48}
+@media(prefers-color-scheme:dark){:root{--bg:#14191c;--ink:#eceae3;--card:#1e262a;--line:#33403f}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:"Trebuchet MS","Segoe UI",system-ui,sans-serif;-webkit-tap-highlight-color:transparent}
+main{max-width:520px;margin:0 auto;padding:18px}h1{font-size:1.3rem;margin:0 0 12px}
+label{font-weight:700}input{width:100%;padding:12px;margin-top:6px;font:inherit;font-size:1.1rem;color:var(--ink);background:var(--card);border:2px solid var(--line);border-radius:8px}
+input:focus-visible,#bz:focus-visible{outline:3px solid #2e86ab;outline-offset:4px}
+#bz{display:block;margin:18px auto 8px;padding:0;border:0;background:none;width:min(88vw,380px);cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none}
+#bz svg{width:100%;height:auto;display:block;pointer-events:none}
+#dome{transition:transform .06s}
+#bz.done #dome,#bz:active:not(:disabled) #dome{transform:translateY(16px)}
+#bz.off svg{filter:grayscale(1) brightness(.85)}
+#bz.ready svg{filter:drop-shadow(0 0 14px rgba(214,40,57,.6))}
+#bz:disabled{cursor:not-allowed}
+.msg{text-align:center;padding:14px;border:2px solid var(--line);border-radius:10px;background:var(--card)}
+.msg.open{border-color:var(--go)}.msg.locked{border-color:var(--stop)}
+@media(prefers-reduced-motion:reduce){#dome{transition:none}}
+</style></head><body><main>
+<h1>Quiz Buzzer</h1>
+<label for="tn">Your team name</label>
+<input id="tn" maxlength="24" placeholder="Type your team name" autocomplete="off">
+<button id="bz" class="off" disabled aria-label="Buzzer">
+<svg viewBox="0 0 300 250" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+<defs>
+<linearGradient id="base" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4a5358"/><stop offset="1" stop-color="#1c2124"/></linearGradient>
+<linearGradient id="chrome" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f2f4f5"/><stop offset=".5" stop-color="#aab3b8"/><stop offset="1" stop-color="#6d777c"/></linearGradient>
+<radialGradient id="red" cx=".38" cy=".25" r=".9"><stop offset="0" stop-color="#ff6b78"/><stop offset=".55" stop-color="#d62839"/><stop offset="1" stop-color="#8d1c28"/></radialGradient>
+</defs>
+<ellipse cx="150" cy="238" rx="125" ry="10" fill="#000" opacity=".25"/>
+<path d="M28 185 Q28 158 66 158 H234 Q272 158 272 185 V212 Q272 236 234 236 H66 Q28 236 28 212Z" fill="url(#base)"/>
+<ellipse cx="150" cy="165" rx="108" ry="28" fill="url(#chrome)"/>
+<ellipse cx="150" cy="166" rx="92" ry="21" fill="#2b3135"/>
+<g id="dome">
+<path d="M56 166 C56 40 244 40 244 166 C244 188 56 188 56 166Z" fill="url(#red)"/>
+<ellipse cx="112" cy="96" rx="40" ry="20" fill="#fff" opacity=".35" transform="rotate(-20 112 96)"/>
+<text x="150" y="150" text-anchor="middle" font-family="Trebuchet MS,Segoe UI,sans-serif" font-size="36" font-weight="800" fill="#fff" opacity=".95">BUZZ</text>
+</g>
+</svg></button>
+<div id="st" class="msg">Connecting…</div>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+let cid=localStorage.getItem('bz_cid');
+if(!cid){cid=(window.crypto&&crypto.randomUUID)?crypto.randomUUID():Math.random().toString(36).slice(2)+Date.now();localStorage.setItem('bz_cid',cid);}
+$('tn').value=localStorage.getItem('bz_name')||'';
+if(!$('tn').value)$('tn').focus();
+let s=null,sending=false,err='';
+function ui(){
+  const named=$('tn').value.trim().length>0,st=$('st'),b=$('bz');
+  if(!s){st.className='msg';st.textContent='Connecting…';b.disabled=true;b.className='off';return;}
+  $('tn').disabled=s.pressed;
+  const ready=s.open&&named&&!s.pressed&&!sending;
+  b.disabled=!ready;
+  b.className=s.pressed?'done':ready?'ready':'off';
+  if(s.pressed){st.className='msg';st.textContent='Buzzed in as '+s.name+'. Wait for the host.';}
+  else if(err){st.className='msg locked';st.textContent=err;}
+  else if(!s.open){st.className='msg locked';st.textContent='Buzzer is locked. The host will open it.';}
+  else if(!named){st.className='msg';st.textContent='Type your team name, then press the buzzer.';}
+  else{st.className='msg open';st.textContent='Buzzer is open. Tap the buzzer!';}
+}
+async function buzz(){
+  const name=$('tn').value.trim();if(!name||sending||!s||!s.open||s.pressed)return;
+  sending=true;err='';ui();
+  if(navigator.vibrate)navigator.vibrate(60);
+  try{const r=await fetch('/buzz',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cid,name})});
+    if(!r.ok)err=(await r.json()).error||'Could not buzz.';}
+  catch(e){err='Connection problem. Try again.';}
+  sending=false;ui();
+}
+$('tn').oninput=()=>{localStorage.setItem('bz_name',$('tn').value.trim());err='';ui();};
+$('bz').onpointerdown=e=>{e.preventDefault();buzz();};
+$('bz').onclick=e=>{if(e.detail===0)buzz();};   // keyboard (Enter/Space)
+const es=new EventSource('/events?cid='+encodeURIComponent(cid));
+es.onmessage=e=>{s=JSON.parse(e.data);if(s.pressed)err='';ui();};
+es.onerror=()=>{s=null;ui();};
+ui();
+</script></body></html>

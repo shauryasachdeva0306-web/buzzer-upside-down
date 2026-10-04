@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: quiz-buzzer
+    runtime: python
+    plan: starter            # free plans sleep when idle; use an always-on plan for a live quiz
+    buildCommand: pip install -r requirements.txt
+    startCommand: python server.py
+    healthCheckPath: /health
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: PYTHON_VERSION
+        value: 3.12.3
+      - key: HOST_PIN
+        sync: false          # type your secret PIN in the Render dashboard
